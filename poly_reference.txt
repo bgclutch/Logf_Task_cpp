@@ -1,0 +1,3 @@
+// Minimax polynomial for ln(1+r) on[-1/2^8, 1/2^8]:
+// poly(r) = 0x1.55561555cccd4p-2 * x^0x1.8p1 + (-0x1.00006000349d3p-1) * x^0x1p1 + 0x1.fffffffff6666p-1 * x
+// ln(2) = 0x1.62e42fefa39efp-1

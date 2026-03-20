@@ -1,0 +1,11 @@
+prec = 256!;
+display = hexadecimal!;
+
+write("") > "poly_reference.txt";
+
+poly = fpminimax(log(1+x),[|1, 2, 3|], [|D, D, D|], [-1/256; 1/256]);
+write("// Minimax polynomial for ln(1+r) on[-1/2^8, 1/2^8]:\n") >> "poly_reference.txt";
+write("// poly(r) = ", poly, "\n") >> "poly_reference.txt";
+write("// ln(2) = ", double(log(2)), "\n") >> "poly_reference.txt";
+
+print("Data saved to poly_reference.txt");

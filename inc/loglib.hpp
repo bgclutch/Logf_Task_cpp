@@ -18,5 +18,5 @@ namespace math {
     void initLookUpTables();
     } // namespace detail
 
-    float logf (float x);
+    extern "C" float logf (float x);
 } // namespace math

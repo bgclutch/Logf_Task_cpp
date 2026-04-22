@@ -91,6 +91,7 @@ int main() {
     math::verification::check_val(0.0f, dump);
     math::verification::check_val(INFINITY, dump);
     math::verification::check_val(NAN, dump);
+    math::verification::check_val(1.0f, dump);
 
     std::vector<std::pair<float, float>> intervals;
     for (int k = -127; k <= 128; ++k) {

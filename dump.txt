@@ -18,6 +18,11 @@ logf(nan) = nan
   FE_INVALID: NO
   FE_DIVBYZERO: NO
 
+logf(1) = 0
+  errno: 0
+  FE_INVALID: NO
+  FE_DIVBYZERO: NO
+
 Interval [5.87747e-39, 1.17549e-38] | Max ULP Error: 0.722736001
 Interval [0.000000000, 0.000000000] | Max ULP Error: 0.911446273
 Interval [0.000000000, 0.000000000] | Max ULP Error: 0.911116719

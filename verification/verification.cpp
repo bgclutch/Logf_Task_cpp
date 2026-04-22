@@ -26,6 +26,7 @@ void check_val(float x, std::ofstream& dump) {
     dump << "  FE_DIVBYZERO: " << (std::fetestexcept(FE_DIVBYZERO) ? "YES" : "NO") << "\n\n";
 }
 
+#if 1
 float calc_ulp_error(double ref, float test) {
     if (ref == static_cast<double>(test))
         return 0.0f;
@@ -53,6 +54,7 @@ float calc_ulp_error(double ref, float test) {
     float ulp_error = static_cast<float>(std::abs(static_cast<double>(test) - ref) / ulp_val);
     return ulp_error;
 }
+#endif
 
 void run_interval_test(float start, float end, size_t points, std::ofstream& csv, std::ofstream& dump) {
     float max_ulp = 0.0f;

@@ -14,7 +14,7 @@ namespace math {
     inline float T_TABLE[256];
 
     namespace detail {
-    float log_newton(float x);
+    double log_newton(double);
     void initLookUpTables();
     } // namespace detail
 

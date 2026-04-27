@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cfenv>
 #include <cerrno>
-
+#include <bit>
 #include <iostream>
 #include <iomanip>
 
@@ -22,12 +22,12 @@ namespace math {
         // f(y) = exp(y) - x, обратная функция для y = ln(x)
         // f'(y) = exp(y)
         // y_new = y - (exp(y) - x) / exp(y) = y - 1 + x * exp(-y)
-        for (int i = 0; i != 10; ++i) {
+        for (int i = 0; i != 20; ++i) {
             y = y - 1. + x * std::exp(-y);
         }
         return y;
     }
-
+    #if 0
     void initLookUpTables() {
         for (int i = 0; i != 256; ++i) {
             double c = 1.0 + static_cast<double>(i) / 256.0;
@@ -37,11 +37,27 @@ namespace math {
             T_TABLE[i] = static_cast<float>(-log_newton(static_cast<double>(tmpRes)));
         }
     }
+    #endif
+    void initLookUpTables() {
+        const int N = 256;
+        const int num0 = 341;
+        const int den  = 2 * N;
+
+        for (int i = 0; i < N; i++) {
+            double x = (double)(num0 + i) / (double)den;
+            double C = 1.0 / x;
+            if (C < 1.0) {
+                x = (double)(num0 + i + (i - (den - num0))) / ((double)den);
+                C = 1.0 / x;
+            }
+            R_TABLE[i] = C;
+            T_TABLE[i] = static_cast<float>(-log_newton(C));
+        }
+    }
     } // namespace detail
 
     extern "C" float logf (float x) {
-        unsigned int ix;
-        std::memcpy(&ix, &x, 4);
+        uint32_t ux_bit = std::bit_cast<uint32_t>(x);
         if (std::isnan(x))
             return NAN;
 
@@ -70,6 +86,7 @@ namespace math {
             return 0.0f;
         }
 
+        #if 0
         if (x >= 0.85f && x <= 1.15f) {
             float f = x - 1.0f;
             // Больше всего вопросов к этой части: правильный ли подход и вообще можно ли так делать?
@@ -84,32 +101,38 @@ namespace math {
 
             return std::fmaf(f * f, p, f);
         }
+        #endif
 
         // Denormal numbers (Bonus part)
         int n = 0;
-        if (ix < 0x00800000) {
+        if (ux_bit < 0x00800000) {
             x *= 8388608.0f;
-            std::memcpy(&ix, &x, 4);
+            std::memcpy(&ux_bit, &x, 4);
             n -= 23;
         }
 
-        n += static_cast<int>(ix >> 23) - 127;
+        uint32_t ux_norm = ux_bit - std::bit_cast<uint32_t>(0.666666f);
+        n += static_cast<int>(ux_norm) >> 23;
 
-        unsigned int mantissa = (ix & 0x007FFFFF) | 0x3F800000;
-        float x_0;
-        std::memcpy(&x_0, &mantissa, 4);
+        uint32_t ux_mantissa = ux_bit - (ux_norm & 0xff800000u);
+        float x_norm = std::bit_cast<float>(ux_mantissa);
 
-        unsigned int idx = (mantissa & 0x007FFFFF) >> 15;
+
+        // unsigned int mantissa = (ix & 0x007FFFFF) | 0x3F800000;
+        // float x_0;
+        // std::memcpy(&x_0, &mantissa, 4);
+
+        unsigned int idx = (ux_norm & 0x007FFFFF) >> 15;
         float Ri = R_TABLE[idx];
         float Ti = T_TABLE[idx];
         // std::cerr << std::setprecision(9) << "R_table[0] =" << R_TABLE[0] << "\nT_table[0]= " << T_TABLE[0] << "\n";
 
         // float r = Ri * x_0 - 1.0f; // <---CATASTROPHIC CANCELLATION WAS HERE
-        float r = std::fmaf(Ri, x_0, -1.0f); // is this solution good enough?
-        float poly = r * (POLY_1 + r * (POLY_2 + r * POLY_3));
-        // float polyTemp = std::fmaf(r, POLY_3, POLY_2);
-        // float poly = std::fmaf(r, polyTemp, POLY_1);
-        // poly = r * poly;
+        float r = std::fmaf(Ri, x_norm, -1.0f); // is this solution good enough?
+        // float poly = r * (POLY_1 + r * (POLY_2 + r * POLY_3));
+        float polyTemp = std::fmaf(r, POLY_3, POLY_2);
+        float poly = std::fmaf(r, polyTemp, POLY_1);
+        poly = r * poly;
 
         float res = poly + Ti; // divide result sum
         res = res + static_cast<float>(n) * LOG_2;

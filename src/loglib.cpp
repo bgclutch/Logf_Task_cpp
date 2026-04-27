@@ -44,14 +44,16 @@ namespace math {
         const int den  = 2 * N;
 
         for (int i = 0; i < N; i++) {
-            double x = (double)(num0 + i) / (double)den;
-            double C = 1.0 / x;
-            if (C < 1.0) {
-                x = (double)(num0 + i + (i - (den - num0))) / ((double)den);
-                C = 1.0 / x;
+            double x = static_cast<double>(num0 + i) / static_cast<double>(den);
+            double C = 1. / x;
+            if (static_cast<float>(C) < 1.0f) {
+                x = static_cast<double>(num0 + i + (i - (den - num0))) / (static_cast<double>(den));
+                C = 1. / x;
             }
-            R_TABLE[i] = C;
-            T_TABLE[i] = static_cast<float>(-log_newton(C));
+
+            float C_tmp = static_cast<float>(C);
+            R_TABLE[i] = C_tmp;
+            T_TABLE[i] = static_cast<float>(-log_newton(static_cast<double>(C_tmp)));
         }
     }
     } // namespace detail
@@ -111,12 +113,11 @@ namespace math {
             n -= 23;
         }
 
-        uint32_t ux_norm = ux_bit - std::bit_cast<uint32_t>(0.666666f);
-        n += static_cast<int>(ux_norm) >> 23;
+        uint32_t ux_norm = ux_bit - 0x3f2a2000u;
+        n += static_cast<int32_t>(ux_norm) >> 23;
 
-        uint32_t ux_mantissa = ux_bit - (ux_norm & 0xff800000u);
-        float x_norm = std::bit_cast<float>(ux_mantissa);
-
+        uint32_t ux_red = ux_bit - (ux_norm & 0xff800000u);
+        float x_norm = std::bit_cast<float>(ux_red);
 
         // unsigned int mantissa = (ix & 0x007FFFFF) | 0x3F800000;
         // float x_0;
@@ -127,7 +128,7 @@ namespace math {
         float Ti = T_TABLE[idx];
         // std::cerr << std::setprecision(9) << "R_table[0] =" << R_TABLE[0] << "\nT_table[0]= " << T_TABLE[0] << "\n";
 
-        // float r = Ri * x_0 - 1.0f; // <---CATASTROPHIC CANCELLATION WAS HERE
+        // float r = Ri * x_norm - 1.0f; // <---CATASTROPHIC CANCELLATION WAS HERE
         float r = std::fmaf(Ri, x_norm, -1.0f); // is this solution good enough?
         // float poly = r * (POLY_1 + r * (POLY_2 + r * POLY_3));
         float polyTemp = std::fmaf(r, POLY_3, POLY_2);

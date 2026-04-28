@@ -4,6 +4,7 @@ set(CMAKE_CXX_STANDARD 23)
 project(logarithm)
 add_executable(logarithm)
 add_executable(verification)
+add_executable(tests)
 
 option(ENABLE_ASAN OFF)
 
@@ -26,8 +27,19 @@ target_sources(verification PRIVATE
     src/loglib.cpp
 )
 
-foreach(target logarithm verification)
-    target_compile_options(${target} PRIVATE
+target_include_directories(tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/verification
+    ${CMAKE_SOURCE_DIR}/../Benchmark_task/inc
+)
+target_sources(tests PRIVATE
+    verification/tests.cpp
+    src/loglib.cpp
+)
+
+foreach(target logarithm verification tests)
+target_compile_options(${target} PRIVATE
+        -O3
     $<$<CONFIG:Debug>:
         -Wall
         -Wextra
@@ -41,7 +53,7 @@ foreach(target logarithm verification)
 endforeach()
 
 if(ENABLE_ASAN)
-    foreach(target logarithm verification)
+    foreach(target logarithm verification tests)
         target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>: -fsanitize=address>)
         target_link_options(${target} PRIVATE $<$<CONFIG:Debug>: -fsanitize=address>)
     endforeach()

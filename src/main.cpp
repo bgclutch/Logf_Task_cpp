@@ -1,9 +1,12 @@
-#include "loglib.hpp"
-#include <iostream>
-#include <iomanip>
 #include <math.h>
 
-int main() {
+#include <iomanip>
+#include <iostream>
+
+#include "loglib.hpp"
+
+int main()
+{
     float x;
     std::cin >> x;
 

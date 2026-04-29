@@ -8,8 +8,61 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <immintrin.h>
+
+#if defined(__AVX512F__)
+#define VEC_WIDTH 16
+#define ALIGNMENT 64
+#define VEC_TYPEd __m512
+#define VEC_TYPEi __m512i
+#define VEC_LOAD _mm512_load_ps
+#define VEC_STORE _mm512_store_ps
+#define VEC_SETd _mm512_set1_ps
+#define VEC_SETi _mm512_set1_epi32
+#define VEC_SUB _mm512_sub_epi32
+#define VEC_AND _mm512_and_si512
+#define VEC_FMA _mm512_fmadd_ps
+#define VEC_SHIFTai _mm512_srai_epi32
+#define VEC_SHIFTli _mm512_srli_epi32
+#define VEC_GATHER _mm512_i32gather_ps
+#define VEC_MASK _mm512_fpclass_ps_mask
+#define VEC_CASTd _mm512_cvtepi32_ps
+#define VEC_MASK_TYPE __mmask16
+#define VEC_BIT_CASTi _mm512_castps_si512
+#define VEC_BIT_CASTd _mm512_castsi512_ps
+#else
+#define VEC_WIDTH 8
+#define ALIGNMENT 32
+#define VEC_TYPEd __m256
+#define VEC_TYPEi __m256i
+#define VEC_MASK_TYPE __mmask8
+#define VEC_LOAD _mm256_loadu_ps
+#define VEC_STORE _mm256_storeu_ps
+#define VEC_SETd _mm256_set1_ps
+#define VEC_SETi _mm256_set1_epi32
+#define VEC_SUB _mm256_sub_epi32
+#define VEC_SHIFTai _mm256_srai_epi32
+#define VEC_SHIFTli _mm256_srli_epi32
+#define VEC_CASTd _mm256_cvtepi32_ps
+#define VEC_GATHER _mm256_i32gather_ps
+#define VEC_AND _mm256_and_si256
+#define VEC_FMA _mm256_fmadd_ps
+#define VEC_BIT_CASTi _mm256_castps_si256
+#define VEC_BIT_CASTd _mm256_castsi256_ps
+#define VEC_MASK _mm256_fpclass_ps_mask
+#endif
 
 namespace math {
+    const VEC_TYPEi RED_CONST = VEC_SETi(0x3f2a2000u);
+    const VEC_TYPEi EXP_MASK  = VEC_SETi(0x007FFFFF);
+    const VEC_TYPEi INDEX_VEC = VEC_SETi(0xff800000u);
+    const VEC_TYPEd NEG_ONE   = VEC_SETd(-1.0f);
+
+    const VEC_TYPEd POLYv1 = VEC_SETd(0x1.fffffffff6666p-1f);
+    const VEC_TYPEd POLYv2 = VEC_SETd(-0x1.00006000349d3p-1f);
+    const VEC_TYPEd POLYv3 = VEC_SETd(0x1.55561555cccd4p-2f);
+    const VEC_TYPEd LOG2v  = VEC_SETd(0x1.62e42fefa39efp-1f);
+
 namespace detail {
 double log_newton(double x) {
   if (x == 0.)
@@ -143,5 +196,46 @@ extern "C" float logf(float x) {
   return res;
 }
 
-// extern "C" void logf_vec(float* x, float* out, size_t size) {}
+extern "C" void logf_avx(float* data, float* out, const size_t size) {
+    size_t offset = 0;
+
+    for (; (offset + VEC_WIDTH - 1) < size; offset += VEC_WIDTH) {
+        VEC_TYPEd vec_x = VEC_LOAD(data + offset);
+
+        VEC_MASK_TYPE exception_mask = VEC_MASK(vec_x, 0x7F);
+        VEC_TYPEi bit_vec_x = VEC_BIT_CASTi(vec_x);
+        VEC_TYPEi vec_x_norm = VEC_SUB(bit_vec_x, RED_CONST);
+
+        VEC_TYPEi vec_norm = VEC_SHIFTai(vec_x_norm, 23);
+        VEC_TYPEd vec = VEC_CASTd(vec_norm);
+
+        VEC_TYPEi v_exp_part = VEC_AND(vec_x_norm, EXP_MASK);
+        VEC_TYPEi v_ux_red   = VEC_SUB(bit_vec_x, v_exp_part);
+        VEC_TYPEd v_x_norm   = VEC_BIT_CASTd(v_ux_red);
+
+        VEC_TYPEi vec_idx = VEC_AND(vec_x_norm, INDEX_VEC);
+        vec_idx = VEC_SHIFTli(vec_idx, 15);
+
+        VEC_TYPEd vec_Ri = VEC_GATHER(vec_idx, R_TABLE, 4);
+        VEC_TYPEd vec_Ti = VEC_GATHER(vec_idx, T_TABLE, 4);
+
+        VEC_TYPEd v_r = VEC_FMA(vec_Ri, v_x_norm, NEG_ONE);
+
+        VEC_TYPEd v_poly = _mm512_fmadd_ps(v_r, v_poly_3, v_poly_2);
+        v_poly = _mm512_fmadd_ps(v_r, v_poly, v_poly_1);
+        v_poly = _mm512_mul_ps(v_r, v_poly);
+
+
+        VEC_TYPEd v_res = _mm512_add_ps(v_poly, v_Ti);
+        v_res = _mm512_fmadd_ps(v_n, v_log2, v_res);
+
+        VEC_STORE(out + offset, v_res);
+
+    }
+
+    for (; offset < size; ++offset) {
+        out[offset] = math::logf(data[offset]);
+    }
+}
 } // namespace math
+

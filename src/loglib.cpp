@@ -10,7 +10,7 @@
 #include <iostream>
 #include <immintrin.h>
 
-#if defined(__AVX512F__)
+#ifdef __AVX512F__
 #define VEC_WIDTH 16
 #define ALIGNMENT 64
 #define VEC_TYPEd __m512
@@ -22,6 +22,8 @@
 #define VEC_SUB _mm512_sub_epi32
 #define VEC_AND _mm512_and_si512
 #define VEC_FMA _mm512_fmadd_ps
+#define VEC_ADD _mm512_add_ps
+#define VEC_MUL _mm512_mul_ps
 #define VEC_SHIFTai _mm512_srai_epi32
 #define VEC_SHIFTli _mm512_srli_epi32
 #define VEC_GATHER _mm512_i32gather_ps
@@ -41,22 +43,38 @@
 #define VEC_SETd _mm256_set1_ps
 #define VEC_SETi _mm256_set1_epi32
 #define VEC_SUB _mm256_sub_epi32
+#define VEC_ADD _mm256_add_ps
 #define VEC_SHIFTai _mm256_srai_epi32
 #define VEC_SHIFTli _mm256_srli_epi32
 #define VEC_CASTd _mm256_cvtepi32_ps
 #define VEC_GATHER _mm256_i32gather_ps
 #define VEC_AND _mm256_and_si256
+#define VEC_ORPS _mm256_or_ps
+#define VEC_ANDPS = _mm256_and_ps
 #define VEC_FMA _mm256_fmadd_ps
+#define VEC_MUL _mm256_mul_ps
 #define VEC_BIT_CASTi _mm256_castps_si256
 #define VEC_BIT_CASTd _mm256_castsi256_ps
-#define VEC_MASK _mm256_fpclass_ps_mask
+#define VEC_CMP _mm256_cmp_ps
+#define VEC_MOVE_MASK _mm256_movemask_ps
+#define VEC_SET_ZERO _mm256_setzero_ps
 #endif
 
 namespace math {
-    const VEC_TYPEi RED_CONST = VEC_SETi(0x3f2a2000u);
+    int32_t REDUCTION_MASK = std::bit_cast<int32_t>(0x3f2a2000u);
+    int32_t INDEX_MASK     = std::bit_cast<int32_t>(0xff800000u);
+    int32_t ABS_MASK       = std::bit_cast<int32_t>(0x7fffffffu);
+
+    const VEC_TYPEi RED_CONST = VEC_SETi(REDUCTION_MASK);
     const VEC_TYPEi EXP_MASK  = VEC_SETi(0x007FFFFF);
-    const VEC_TYPEi INDEX_VEC = VEC_SETi(0xff800000u);
+    const VEC_TYPEi INDEX_VEC = VEC_SETi(INDEX_MASK);
     const VEC_TYPEd NEG_ONE   = VEC_SETd(-1.0f);
+
+    #ifndef __AVX512F__
+        const VEC_TYPEd VEC_ZERO = VEC_SET_ZERO();
+        const VEC_TYPEd VEC_INF  = VEC_CASTd(VEC_SETi(INDEX_MASK));
+        const VEC_TYPEd VEC_ABS  = VEC_CASTd(VEC_SETi(ABS_MASK));
+    #endif
 
     const VEC_TYPEd POLYv1 = VEC_SETd(0x1.fffffffff6666p-1f);
     const VEC_TYPEd POLYv2 = VEC_SETd(-0x1.00006000349d3p-1f);
@@ -199,15 +217,25 @@ extern "C" float logf(float x) {
 extern "C" void logf_avx(float* data, float* out, const size_t size) {
     size_t offset = 0;
 
-    for (; (offset + VEC_WIDTH - 1) < size; offset += VEC_WIDTH) {
+    for (; (offset + VEC_WIDTH - 1) != size; offset += VEC_WIDTH) {
         VEC_TYPEd vec_x = VEC_LOAD(data + offset);
 
-        VEC_MASK_TYPE exception_mask = VEC_MASK(vec_x, 0x7F);
+        #ifdef __AVX512F__
+            VEC_MASK_TYPE exception_mask = VEC_MASK(vec_x, 0x7F);
+        #else
+            VEC_TYPEd bad_mask = VEC_ORPS(
+                VEC_CMP(vec_x, VEC_SET_ZERO(), _CMP_LE_OQ),
+                VEC_CMP(VEC_ANDPS(vec_x, VEC_ABS), VEC_INF, _CMP_GE_OQ)
+            );
+
+            VEC_MASK_TYPE exception_mask = VEC_MOVE_MASK(bad_mask);
+        #endif
+
         VEC_TYPEi bit_vec_x = VEC_BIT_CASTi(vec_x);
         VEC_TYPEi vec_x_norm = VEC_SUB(bit_vec_x, RED_CONST);
 
         VEC_TYPEi vec_norm = VEC_SHIFTai(vec_x_norm, 23);
-        VEC_TYPEd vec = VEC_CASTd(vec_norm);
+        VEC_TYPEd vec_n = VEC_CASTd(vec_norm);
 
         VEC_TYPEi v_exp_part = VEC_AND(vec_x_norm, EXP_MASK);
         VEC_TYPEi v_ux_red   = VEC_SUB(bit_vec_x, v_exp_part);
@@ -216,21 +244,32 @@ extern "C" void logf_avx(float* data, float* out, const size_t size) {
         VEC_TYPEi vec_idx = VEC_AND(vec_x_norm, INDEX_VEC);
         vec_idx = VEC_SHIFTli(vec_idx, 15);
 
-        VEC_TYPEd vec_Ri = VEC_GATHER(vec_idx, R_TABLE, 4);
-        VEC_TYPEd vec_Ti = VEC_GATHER(vec_idx, T_TABLE, 4);
+        #ifdef __AVX512F__
+            VEC_TYPEd vec_Ri = VEC_GATHER(vec_idx, R_TABLE, 4);
+            VEC_TYPEd vec_Ti = VEC_GATHER(vec_idx, T_TABLE, 4);
+        #else
+            VEC_TYPEd vec_Ri = VEC_GATHER(R_TABLE, vec_idx, 4);
+            VEC_TYPEd vec_Ti = VEC_GATHER(T_TABLE, vec_idx, 4);
+        #endif
 
-        VEC_TYPEd v_r = VEC_FMA(vec_Ri, v_x_norm, NEG_ONE);
+        VEC_TYPEd vec_r = VEC_FMA(vec_Ri, v_x_norm, NEG_ONE);
 
-        VEC_TYPEd v_poly = _mm512_fmadd_ps(v_r, v_poly_3, v_poly_2);
-        v_poly = _mm512_fmadd_ps(v_r, v_poly, v_poly_1);
-        v_poly = _mm512_mul_ps(v_r, v_poly);
+        VEC_TYPEd v_poly = VEC_FMA(vec_r, POLYv3, POLYv2);
+        v_poly = VEC_FMA(vec_r, v_poly, POLYv1);
+        v_poly = VEC_MUL(vec_r, v_poly);
 
-
-        VEC_TYPEd v_res = _mm512_add_ps(v_poly, v_Ti);
-        v_res = _mm512_fmadd_ps(v_n, v_log2, v_res);
+        VEC_TYPEd v_res = VEC_ADD(v_poly, vec_Ti);
+        v_res = VEC_FMA(vec_n, LOG2v, v_res);
 
         VEC_STORE(out + offset, v_res);
 
+        if (exception_mask != 0) {
+            for (size_t i = 0; i != VEC_WIDTH; ++i) {
+                if ((exception_mask >> i) & 1) {
+                    out[offset + i] = math::logf(data[offset + i]);
+                }
+            }
+        }
     }
 
     for (; offset < size; ++offset) {

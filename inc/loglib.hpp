@@ -19,4 +19,5 @@ void initLookUpTables();
 } // namespace detail
 
 extern "C" float logf(float x);
+extern "C" void logf_avx(float*, float*, const size_t);
 } // namespace math

@@ -37,7 +37,7 @@
 #define ALIGNMENT 32
 #define VEC_TYPEd __m256
 #define VEC_TYPEi __m256i
-#define VEC_MASK_TYPE __mmask8
+#define VEC_MASK_TYPE int
 #define VEC_LOAD _mm256_loadu_ps
 #define VEC_STORE _mm256_storeu_ps
 #define VEC_SETd _mm256_set1_ps
@@ -50,7 +50,7 @@
 #define VEC_GATHER _mm256_i32gather_ps
 #define VEC_AND _mm256_and_si256
 #define VEC_ORPS _mm256_or_ps
-#define VEC_ANDPS = _mm256_and_ps
+#define VEC_ANDPS _mm256_and_ps
 #define VEC_FMA _mm256_fmadd_ps
 #define VEC_MUL _mm256_mul_ps
 #define VEC_BIT_CASTi _mm256_castps_si256
@@ -61,26 +61,6 @@
 #endif
 
 namespace math {
-    int32_t REDUCTION_MASK = std::bit_cast<int32_t>(0x3f2a2000u);
-    int32_t INDEX_MASK     = std::bit_cast<int32_t>(0xff800000u);
-    int32_t ABS_MASK       = std::bit_cast<int32_t>(0x7fffffffu);
-
-    const VEC_TYPEi RED_CONST = VEC_SETi(REDUCTION_MASK);
-    const VEC_TYPEi EXP_MASK  = VEC_SETi(0x007FFFFF);
-    const VEC_TYPEi INDEX_VEC = VEC_SETi(INDEX_MASK);
-    const VEC_TYPEd NEG_ONE   = VEC_SETd(-1.0f);
-
-    #ifndef __AVX512F__
-        const VEC_TYPEd VEC_ZERO = VEC_SET_ZERO();
-        const VEC_TYPEd VEC_INF  = VEC_CASTd(VEC_SETi(INDEX_MASK));
-        const VEC_TYPEd VEC_ABS  = VEC_CASTd(VEC_SETi(ABS_MASK));
-    #endif
-
-    const VEC_TYPEd POLYv1 = VEC_SETd(0x1.fffffffff6666p-1f);
-    const VEC_TYPEd POLYv2 = VEC_SETd(-0x1.00006000349d3p-1f);
-    const VEC_TYPEd POLYv3 = VEC_SETd(0x1.55561555cccd4p-2f);
-    const VEC_TYPEd LOG2v  = VEC_SETd(0x1.62e42fefa39efp-1f);
-
 namespace detail {
 double log_newton(double x) {
   if (x == 0.)
@@ -215,19 +195,45 @@ extern "C" float logf(float x) {
 }
 
 extern "C" void logf_avx(float* data, float* out, const size_t size) {
+    const VEC_TYPEi RED_CONST = VEC_SETi(0x3f2a2000u);
+    const VEC_TYPEi EXP_MASK  = VEC_SETi(std::bit_cast<int32_t>(0xff800000u));
+    const VEC_TYPEi INDEX_VEC = VEC_SETi(std::bit_cast<int32_t>(0x007FFFFFu));
+    const VEC_TYPEd NEG_ONE   = VEC_SETd(-1.0f);
+
+    const VEC_TYPEd POLYv1    = VEC_SETd(0x1.fffffffff6666p-1f);
+    const VEC_TYPEd POLYv2    = VEC_SETd(-0x1.00006000349d3p-1f);
+    const VEC_TYPEd POLYv3    = VEC_SETd(0x1.55561555cccd4p-2f);
+    const VEC_TYPEd LOG2v     = VEC_SETd(0.69314718056f);
+
+    #ifndef __AVX512F__
+    const VEC_TYPEd VEC_ABS = VEC_BIT_CASTd(VEC_SETi(0x7fffffffu));
+    const VEC_TYPEd VEC_INF = VEC_BIT_CASTd(VEC_SETi(0x7f800000u));
+    #endif
+
+
     size_t offset = 0;
 
-    for (; (offset + VEC_WIDTH - 1) != size; offset += VEC_WIDTH) {
+    for (; (offset + VEC_WIDTH) <= size; offset += VEC_WIDTH) {
         VEC_TYPEd vec_x = VEC_LOAD(data + offset);
 
         #ifdef __AVX512F__
             VEC_MASK_TYPE exception_mask = VEC_MASK(vec_x, 0x7F);
         #else
+            #if 1
             VEC_TYPEd bad_mask = VEC_ORPS(
                 VEC_CMP(vec_x, VEC_SET_ZERO(), _CMP_LE_OQ),
                 VEC_CMP(VEC_ANDPS(vec_x, VEC_ABS), VEC_INF, _CMP_GE_OQ)
             );
+            #endif
+            #if 0
+            const VEC_TYPEd V_MIN_NORMAL = VEC_BIT_CASTd(VEC_SETi(0x00800000u));
 
+            VEC_TYPEd bad_mask = VEC_ORPS(
+            VEC_CMP(vec_x, V_MIN_NORMAL, _CMP_LT_OQ),
+            VEC_CMP(VEC_ANDPS(vec_x, VEC_ABS), VEC_INF, _CMP_GE_OQ)
+            );
+
+            #endif
             VEC_MASK_TYPE exception_mask = VEC_MOVE_MASK(bad_mask);
         #endif
 
@@ -264,7 +270,7 @@ extern "C" void logf_avx(float* data, float* out, const size_t size) {
         VEC_STORE(out + offset, v_res);
 
         if (exception_mask != 0) {
-            for (size_t i = 0; i != VEC_WIDTH; ++i) {
+            for (size_t i = 0; i < VEC_WIDTH; ++i) {
                 if ((exception_mask >> i) & 1) {
                     out[offset + i] = math::logf(data[offset + i]);
                 }

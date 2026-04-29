@@ -10,18 +10,13 @@
 int main() {
     constexpr size_t size = 10000;
     std::vector<float> data(size);
+    std::vector<float> res(size);
     std::mt19937 gen(42);
 
-    float input[size];
-    float res[size];
-
     std::generate(data.begin(), data.end(), gen);
-    for (size_t i = 0; i < size; ++i) {
-        input[i] = data[i];
-    }
 
-    auto mylogf_vec = [](float* x, float* res) {
-        return math::logf_avx(x, res, size);
+    auto mylogf_vec = [&](std::vector<float> x, std::vector<float> out, const size_t dataSize) {
+        return math::logf_avx(x.data(), out.data(), dataSize);
     };
 
     auto stdlog = [](double x) {
@@ -43,7 +38,7 @@ int main() {
     std::cout << "-------------------------------\n";
 
     std::cout << "mylogf_vec res: " << "\n";
-    benchlib::funcLatencyTest(mylogf_vec, data);
+    benchlib::vfuncTest(mylogf_vec, data);
     std::cout << "-------------------------------\n";
 
     return EXIT_SUCCESS;

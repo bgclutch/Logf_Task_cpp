@@ -40,12 +40,8 @@ target_sources(tests PRIVATE
 foreach(target logarithm verification tests)
 target_compile_options(${target} PRIVATE
         -O3
-        -mavx
         -mavx2
-        -mavx512f
-        -mavx512dq
         -mfma
-        -march=native
     $<$<CONFIG:Debug>:
         -Wall
         -Wextra

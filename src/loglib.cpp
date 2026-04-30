@@ -1,5 +1,7 @@
 #include "loglib.hpp"
 
+#include <immintrin.h>
+
 #include <bit>
 #include <cerrno>
 #include <cfenv>
@@ -8,7 +10,6 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
-#include <immintrin.h>
 
 #ifdef __AVX512F__
 #define VEC_WIDTH 16
@@ -60,23 +61,25 @@
 #define VEC_SET_ZERO _mm256_setzero_ps
 #endif
 
-namespace math {
-namespace detail {
-double log_newton(double x) {
-  if (x == 0.)
-    return -INFINITY;
-  if (x < 0.)
-    return NAN;
+namespace math
+{
+namespace detail
+{
+double log_newton(double x)
+{
+    if (x == 0.) return -INFINITY;
+    if (x < 0.) return NAN;
 
-  double y = 0.0f;
-  // y_0 - начальное условие
-  // f(y) = exp(y) - x, обратная функция для y = ln(x)
-  // f'(y) = exp(y)
-  // y_new = y - (exp(y) - x) / exp(y) = y - 1 + x * exp(-y)
-  for (int i = 0; i != 20; ++i) {
-    y = y - 1. + x * std::exp(-y);
-  }
-  return y;
+    double y = 0.0f;
+    // y_0 - начальное условие
+    // f(y) = exp(y) - x, обратная функция для y = ln(x)
+    // f'(y) = exp(y)
+    // y_new = y - (exp(y) - x) / exp(y) = y - 1 + x * exp(-y)
+    for (int i = 0; i != 20; ++i)
+    {
+        y = y - 1. + x * std::exp(-y);
+    }
+    return y;
 }
 #if 0
     void initLookUpTables() {
@@ -89,56 +92,63 @@ double log_newton(double x) {
         }
     }
 #endif
-void initLookUpTables() {
-  const int N = 256;
-  const int num0 = 341;
-  const int den = 2 * N;
+void initLookUpTables()
+{
+    const int N    = 256;
+    const int num0 = 341;
+    const int den  = 2 * N;
 
-  for (int i = 0; i < N; i++) {
-    double x = static_cast<double>(num0 + i) / static_cast<double>(den);
-    double C = 1. / x;
-    if (static_cast<float>(C) < 1.0f) {
-      x = static_cast<double>(num0 + i + (i - (den - num0))) /
-          (static_cast<double>(den));
-      C = 1. / x;
+    for (int i = 0; i < N; i++)
+    {
+        double x = static_cast<double>(num0 + i) / static_cast<double>(den);
+        double C = 1. / x;
+        if (static_cast<float>(C) < 1.0f)
+        {
+            x = static_cast<double>(num0 + i + (i - (den - num0))) / (static_cast<double>(den));
+            C = 1. / x;
+        }
+
+        float C_tmp = static_cast<float>(C);
+        R_TABLE[i]  = C_tmp;
+        T_TABLE[i]  = static_cast<float>(-log_newton(static_cast<double>(C_tmp)));
     }
-
-    float C_tmp = static_cast<float>(C);
-    R_TABLE[i] = C_tmp;
-    T_TABLE[i] = static_cast<float>(-log_newton(static_cast<double>(C_tmp)));
-  }
 }
-} // namespace detail
+}  // namespace detail
 
-extern "C" float logf(float x) {
-  uint32_t ux_bit = std::bit_cast<uint32_t>(x);
-  if (std::isnan(x))
-    return NAN;
+extern "C" float logf(float x)
+{
+    uint32_t ux_bit = std::bit_cast<uint32_t>(x);
+    if (std::isnan(x)) return NAN;
 
-  if (std::isinf(x)) {
-    if (x < 0) {
-      errno = EDOM;
-      std::feraiseexcept(FE_INVALID);
-      return NAN;
+    if (std::isinf(x))
+    {
+        if (x < 0)
+        {
+            errno = EDOM;
+            std::feraiseexcept(FE_INVALID);
+            return NAN;
+        }
+        return x;
     }
-    return x;
-  }
 
-  if (x < 0.0f) {
-    errno = EDOM;
-    std::feraiseexcept(FE_INVALID);
-    return NAN;
-  }
+    if (x < 0.0f)
+    {
+        errno = EDOM;
+        std::feraiseexcept(FE_INVALID);
+        return NAN;
+    }
 
-  if (x == 0.0f) {
-    errno = ERANGE;
-    std::feraiseexcept(FE_DIVBYZERO);
-    return -INFINITY;
-  }
+    if (x == 0.0f)
+    {
+        errno = ERANGE;
+        std::feraiseexcept(FE_DIVBYZERO);
+        return -INFINITY;
+    }
 
-  if (x == 1.0f) {
-    return 0.0f;
-  }
+    if (x == 1.0f)
+    {
+        return 0.0f;
+    }
 
 #if 0
         if (x >= 0.85f && x <= 1.15f) {
@@ -157,75 +167,74 @@ extern "C" float logf(float x) {
         }
 #endif
 
-  // Denormal numbers (Bonus part)
-  int n = 0;
-  if (ux_bit < 0x00800000) {
-    x *= 8388608.0f;
-    std::memcpy(&ux_bit, &x, 4);
-    n -= 23;
-  }
+    // Denormal numbers (Bonus part)
+    int n = 0;
+    if (ux_bit < 0x00800000)
+    {
+        x *= 8388608.0f;
+        std::memcpy(&ux_bit, &x, 4);
+        n -= 23;
+    }
 
-  uint32_t ux_norm = ux_bit - 0x3f2a2000u;
-  n += static_cast<int32_t>(ux_norm) >> 23;
+    uint32_t ux_norm = ux_bit - 0x3f2a2000u;
+    n += static_cast<int32_t>(ux_norm) >> 23;
 
-  uint32_t ux_red = ux_bit - (ux_norm & 0xff800000u);
-  float x_norm = std::bit_cast<float>(ux_red);
+    uint32_t ux_red = ux_bit - (ux_norm & 0xff800000u);
+    float x_norm    = std::bit_cast<float>(ux_red);
 
-  // unsigned int mantissa = (ix & 0x007FFFFF) | 0x3F800000;
-  // float x_0;
-  // std::memcpy(&x_0, &mantissa, 4);
+    // unsigned int mantissa = (ix & 0x007FFFFF) | 0x3F800000;
+    // float x_0;
+    // std::memcpy(&x_0, &mantissa, 4);
 
-  unsigned int idx = (ux_norm & 0x007FFFFF) >> 15;
-  float Ri = R_TABLE[idx];
-  float Ti = T_TABLE[idx];
-  // std::cerr << std::setprecision(9) << "R_table[0] =" << R_TABLE[0] <<
-  // "\nT_table[0]= " << T_TABLE[0] << "\n";
+    unsigned int idx = (ux_norm & 0x007FFFFF) >> 15;
+    float Ri         = R_TABLE[idx];
+    float Ti         = T_TABLE[idx];
+    // std::cerr << std::setprecision(9) << "R_table[0] =" << R_TABLE[0] <<
+    // "\nT_table[0]= " << T_TABLE[0] << "\n";
 
-  // float r = Ri * x_norm - 1.0f; // <---CATASTROPHIC CANCELLATION WAS HERE
-  float r = std::fmaf(Ri, x_norm, -1.0f); // is this solution good enough?
-  // float poly = r * (POLY_1 + r * (POLY_2 + r * POLY_3));
-  float polyTemp = std::fmaf(r, POLY_3, POLY_2);
-  float poly = std::fmaf(r, polyTemp, POLY_1);
-  poly = r * poly;
+    // float r = Ri * x_norm - 1.0f; // <---CATASTROPHIC CANCELLATION WAS HERE
+    float r = std::fmaf(Ri, x_norm, -1.0f);  // is this solution good enough?
+    // float poly = r * (POLY_1 + r * (POLY_2 + r * POLY_3));
+    float polyTemp = std::fmaf(r, POLY_3, POLY_2);
+    float poly     = std::fmaf(r, polyTemp, POLY_1);
+    poly           = r * poly;
 
-  float res = poly + Ti; // divide result sum
-  res = res + static_cast<float>(n) * LOG_2;
+    float res = poly + Ti;  // divide result sum
+    res       = res + static_cast<float>(n) * LOG_2;
 
-  return res;
+    return res;
 }
 
-extern "C" void logf_avx(float* data, float* out, const size_t size) {
+extern "C" void logf_avx(float* data, float* out, const size_t size)
+{
     const VEC_TYPEi RED_CONST = VEC_SETi(0x3f2a2000u);
     const VEC_TYPEi EXP_MASK  = VEC_SETi(std::bit_cast<int32_t>(0xff800000u));
     const VEC_TYPEi INDEX_VEC = VEC_SETi(std::bit_cast<int32_t>(0x007FFFFFu));
     const VEC_TYPEd NEG_ONE   = VEC_SETd(-1.0f);
 
-    const VEC_TYPEd POLYv1    = VEC_SETd(0x1.fffffffff6666p-1f);
-    const VEC_TYPEd POLYv2    = VEC_SETd(-0x1.00006000349d3p-1f);
-    const VEC_TYPEd POLYv3    = VEC_SETd(0x1.55561555cccd4p-2f);
-    const VEC_TYPEd LOG2v     = VEC_SETd(0.69314718056f);
+    const VEC_TYPEd POLYv1 = VEC_SETd(0x1.fffffffff6666p-1f);
+    const VEC_TYPEd POLYv2 = VEC_SETd(-0x1.00006000349d3p-1f);
+    const VEC_TYPEd POLYv3 = VEC_SETd(0x1.55561555cccd4p-2f);
+    const VEC_TYPEd LOG2v  = VEC_SETd(0.69314718056f);
 
-    #ifndef __AVX512F__
+#ifndef __AVX512F__
     const VEC_TYPEd VEC_ABS = VEC_BIT_CASTd(VEC_SETi(0x7fffffffu));
     const VEC_TYPEd VEC_INF = VEC_BIT_CASTd(VEC_SETi(0x7f800000u));
-    #endif
-
+#endif
 
     size_t offset = 0;
 
-    for (; (offset + VEC_WIDTH) <= size; offset += VEC_WIDTH) {
+    for (; (offset + VEC_WIDTH) <= size; offset += VEC_WIDTH)
+    {
         VEC_TYPEd vec_x = VEC_LOAD(data + offset);
 
-        #ifdef __AVX512F__
-            VEC_MASK_TYPE exception_mask = VEC_MASK(vec_x, 0x7F);
-        #else
-            #if 1
-            VEC_TYPEd bad_mask = VEC_ORPS(
-                VEC_CMP(vec_x, VEC_SET_ZERO(), _CMP_LE_OQ),
-                VEC_CMP(VEC_ANDPS(vec_x, VEC_ABS), VEC_INF, _CMP_GE_OQ)
-            );
-            #endif
-            #if 0
+#ifdef __AVX512F__
+        VEC_MASK_TYPE exception_mask = VEC_MASK(vec_x, 0x7F);
+#else
+#if 1
+        VEC_TYPEd bad_mask = VEC_ORPS(VEC_CMP(vec_x, VEC_SET_ZERO(), _CMP_LE_OQ), VEC_CMP(VEC_ANDPS(vec_x, VEC_ABS), VEC_INF, _CMP_GE_OQ));
+#endif
+#if 0
             const VEC_TYPEd V_MIN_NORMAL = VEC_BIT_CASTd(VEC_SETi(0x00800000u));
 
             VEC_TYPEd bad_mask = VEC_ORPS(
@@ -233,54 +242,57 @@ extern "C" void logf_avx(float* data, float* out, const size_t size) {
             VEC_CMP(VEC_ANDPS(vec_x, VEC_ABS), VEC_INF, _CMP_GE_OQ)
             );
 
-            #endif
-            VEC_MASK_TYPE exception_mask = VEC_MOVE_MASK(bad_mask);
-        #endif
+#endif
+        VEC_MASK_TYPE exception_mask = VEC_MOVE_MASK(bad_mask);
+#endif
 
-        VEC_TYPEi bit_vec_x = VEC_BIT_CASTi(vec_x);
+        VEC_TYPEi bit_vec_x  = VEC_BIT_CASTi(vec_x);
         VEC_TYPEi vec_x_norm = VEC_SUB(bit_vec_x, RED_CONST);
 
         VEC_TYPEi vec_norm = VEC_SHIFTai(vec_x_norm, 23);
-        VEC_TYPEd vec_n = VEC_CASTd(vec_norm);
+        VEC_TYPEd vec_n    = VEC_CASTd(vec_norm);
 
         VEC_TYPEi v_exp_part = VEC_AND(vec_x_norm, EXP_MASK);
         VEC_TYPEi v_ux_red   = VEC_SUB(bit_vec_x, v_exp_part);
         VEC_TYPEd v_x_norm   = VEC_BIT_CASTd(v_ux_red);
 
         VEC_TYPEi vec_idx = VEC_AND(vec_x_norm, INDEX_VEC);
-        vec_idx = VEC_SHIFTli(vec_idx, 15);
+        vec_idx           = VEC_SHIFTli(vec_idx, 15);
 
-        #ifdef __AVX512F__
-            VEC_TYPEd vec_Ri = VEC_GATHER(vec_idx, R_TABLE, 4);
-            VEC_TYPEd vec_Ti = VEC_GATHER(vec_idx, T_TABLE, 4);
-        #else
-            VEC_TYPEd vec_Ri = VEC_GATHER(R_TABLE, vec_idx, 4);
-            VEC_TYPEd vec_Ti = VEC_GATHER(T_TABLE, vec_idx, 4);
-        #endif
+#ifdef __AVX512F__
+        VEC_TYPEd vec_Ri = VEC_GATHER(vec_idx, R_TABLE, 4);
+        VEC_TYPEd vec_Ti = VEC_GATHER(vec_idx, T_TABLE, 4);
+#else
+        VEC_TYPEd vec_Ri             = VEC_GATHER(R_TABLE, vec_idx, 4);
+        VEC_TYPEd vec_Ti             = VEC_GATHER(T_TABLE, vec_idx, 4);
+#endif
 
         VEC_TYPEd vec_r = VEC_FMA(vec_Ri, v_x_norm, NEG_ONE);
 
         VEC_TYPEd v_poly = VEC_FMA(vec_r, POLYv3, POLYv2);
-        v_poly = VEC_FMA(vec_r, v_poly, POLYv1);
-        v_poly = VEC_MUL(vec_r, v_poly);
+        v_poly           = VEC_FMA(vec_r, v_poly, POLYv1);
+        v_poly           = VEC_MUL(vec_r, v_poly);
 
         VEC_TYPEd v_res = VEC_ADD(v_poly, vec_Ti);
-        v_res = VEC_FMA(vec_n, LOG2v, v_res);
+        v_res           = VEC_FMA(vec_n, LOG2v, v_res);
 
         VEC_STORE(out + offset, v_res);
 
-        if (exception_mask != 0) {
-            for (size_t i = 0; i < VEC_WIDTH; ++i) {
-                if ((exception_mask >> i) & 1) {
+        if (exception_mask != 0)
+        {
+            for (size_t i = 0; i < VEC_WIDTH; ++i)
+            {
+                if ((exception_mask >> i) & 1)
+                {
                     out[offset + i] = math::logf(data[offset + i]);
                 }
             }
         }
     }
 
-    for (; offset < size; ++offset) {
+    for (; offset < size; ++offset)
+    {
         out[offset] = math::logf(data[offset]);
     }
 }
-} // namespace math
-
+}  // namespace math

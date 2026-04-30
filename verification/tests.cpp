@@ -65,11 +65,11 @@ int main() {
     benchlib::vfuncTest(sleef_vec, data);
     std::cout << "\n";
 
-    std::cout << "Intel MKL\n";
+    std::cout << "Intel MKL HA\n";
     benchlib::vfuncTest(mkl_vecha, data);
     std::cout << "\n";
 
-    std::cout << "Intel MKL\n";
+    std::cout << "Intel MKL LA\n";
     benchlib::vfuncTest(mkl_vecla, data);
     std::cout << "\n";
 

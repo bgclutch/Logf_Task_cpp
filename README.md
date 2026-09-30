@@ -1,4 +1,4 @@
-# simd-logf
+# Logf task
 
 A branchless, vectorized implementation of `logf()` in C++ (AVX2 / AVX-512),
 built from scratch and benchmarked against `std::log`, SLEEF, and Intel MKL.
